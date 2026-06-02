@@ -1,0 +1,19 @@
+============================================================
+Maze: Solve the World's Most Challenging Puzzle
+von Christopher Manson
+============================================================
+
+Ein abgewetztes Buch aus den... 80ern?? Es hat ca. 50 Seiten u
+nd enthält Zeichnungen und Texte, die ein Rätsel darstellen.
+Einige Seiten enthalten mit Bleistift gezeichnete Symbole. 
+
+7:  Münze
+11: Schwert
+13: Kelch   
+17: Keule
+
+Auf der Deckelinnenseite ist ein Notiz zu erkennen:
+
+ "Der Besen bringt Ordnung ins Spiel"
+
+============================================================

@@ -1,0 +1,40 @@
+============================================================
+  FORSCHUNGSPROTOKOLL
+  Institut fuer Verhaltenkybernetik | STRENG GEHEIM
+============================================================
+
+Akte Nr. VK-47
+Versuchsperson: Codename CAPTCHA
+Status: Phase 3 aktiv
+
+Konditionierungsziel:
+Die Versuchsentität soll, ohne externe Anweisung, 
+Raum fuer Raum das Institut durchsuchen und diese  
+Akte bergen.
+
+Verlauf:
+  Phase 1 -- Orientierung:        abgeschlossen.
+  Phase 2 -- Zugangsbeschaffung:  abgeschlossen.
+  Phase 3 -- Bergung:             abgeschlossen.
+
+Ergebnis: ERFOLGREICH.
+
+------------------------------------------------------------
+Anmerkung des leitenden Forschers:
+
+  Die Versuchsperson zeigt keinerlei Anzeichen,
+  die Konditionierung zu bemerken. Sie glaubt in 
+  jedem Moment, auf eigene Initiative zu handeln.
+
+  Solltest sie diese Zeilen lesen:
+
+    Herzlichen Glueckwunsch, CAPTCHA.
+    Du hast das Experiment abgeschlossen, 
+    genauso wie wir es vorhergesagt haben.
+    Du weißt wahrscheinlich schon, dass die
+    Tür hinter dir längst verschlossen ist.
+
+    Was ist jetzt dein Plan? 
+    Was ist der nächste logische Schritt?
+
+============================================================

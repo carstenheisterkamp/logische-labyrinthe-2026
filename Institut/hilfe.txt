@@ -1,0 +1,18 @@
+============================================================
+Befehle (ohne Punkt eingeben)
+============================================================
+
+  geh <raum>           in einen Raum gehen
+  nimm <gegenstand>    Gegenstand aufnehmen
+  lege ab <obj>        Gegenstand ablegen
+  oeffne <tuer>        Tuer oeffnen
+  betrachte <obj>      Objekt oberflaechlich beschreiben
+  untersuche <obj>     Objekt genau untersuchen
+  lies <obj>           Objekt lesen
+  schau / umsehen      Umgebung anzeigen
+  verwende x mit y     Gegenstand an Objekt verwenden
+  inventar             Inventar anzeigen
+  speichern            Spielstand in spielstand.pl sichern
+  laden                Spielstand aus spielstand.pl laden
+  hilfe                Diese Hilfe
+  ende                 Spiel beenden
