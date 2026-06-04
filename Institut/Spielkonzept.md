@@ -22,7 +22,7 @@ Metarätsel geköst -> ausgabe.txt->"drücke eine taste" -> Spiel neu starten? -
 
     Vor dem Labor
     |      |
-    |    Eingang - Korridor - Labor (verschlossen, ID Karte) - Steuerpult (Schaltet Gehimtür frei, Deduktiosnrätsel) 
+    |    Eingang - Korridor - Labor (verschlossen, ID Karte) - Steuerpult (Schaltet Geheimtür frei, Deduktiosnrätsel) 
     |      |
     |  [Archivtür] (verschlossen, Brecheisen)
     |      |
@@ -62,6 +62,23 @@ Taschenlampe        Labor (auf dem Steuerpult)      Schlüssel                  
     Bei verwende Brechstange mit Labortür: Die Labortür ist zu stark für das Brecheisen
     Bei Verwendung aller anderen Gegenstände Dafault Text ausgebem "Du kannst A nicht mit der Tür verwenden" o.ä.
     Korridor Korridor/Labor frei
+
+- Steuerpult Rätsel
+    Kreisförmige Regler, die dass Sonnensystem abbilden als Symbole mit der Sonne in der Mitte
+    und den acht Planeten als Regler drumherum. Die Gradzahlen müssen als ein String eingegeben werden, damit die Eingabe nicht zu kompliziert wird. Dann muss das Sonnensymbol in der Mitte gedrückt werden, damit die Tür aufgeht. Auch hier der Einfachheit halber geschieht das autmatisch.
+
+    Die richtigen Winkel der Schaltefinden sich in der Notiz am Schaltpult.
+    Lösung: "180 135 315 270 90 45 0 180"
+
+    1,☿ (Merkur),Hälfte des Kreises (360/2),180°
+    2,♀ (Venus),"3/4 von Merkurs Weg (180×0,75)",135°
+    3,♁ (Erde),Opposition zu Venus (135+180),315°
+    4,♂ (Mars),"Horizontale, links",270°
+    5,♃ (Jupiter),"Horizontale, rechts",90°
+    6,♄ (Saturn),Ein Achtel zu weit (360+45(mod360)),45°
+    7,♅ (Uranus),Unbewegt (Ursprung),0°
+    8 (Äußerst),♆ (Neptun),Linie mit 1 & 7,180°
+    
 
 - Archivrätsel
     Die Tür ist aus Holz und hängt durch irh alter eh schon schief

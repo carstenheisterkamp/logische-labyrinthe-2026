@@ -13,9 +13,17 @@
 %    Spielstand-Persistenz (write_term/read_term, Term-Serialisierung)
 %
 %  Determinismus-Angaben:
-%  det:    genau eine Loesung, kein Backtracking danach.
+%  det:     genau eine Loesung, kein Backtracking danach.
 %  semidet: eine Loesung oder keine.
-%  nondet:  mehrere Loesungen moeglich.
+%  nondet:  mehrere Loesungen moeglich (auch null).
+%  multi:   mehrere Loesungen moeglich, mindestens eine.
+%  failure: schlaegt immer fehl (z. B. repeat/fail-Loop).
+%  Argument-Praefixe:
+%  +      Eingabe (das Argument ist gebunden)
+%  -      Ausgabe (das Argument wird gebunden)
+%  ?      Ein- oder Ausgabe
+%  @      Eingabe, wird nicht gebunden (nur inspiziert)
+%  :      Meta-Argument (das Argument wird als Goal aufgerufen)
 
 :- use_module(library(dcgs)).
 :- use_module(library(lists)).
@@ -24,6 +32,8 @@
 :- use_module(library(time)).
 
 % Scryer-kompatible Allquantifizierung.
+% Explizite Formulierung des Negation-as-Failure-Prinzips hinter forall/2.
+%! forall(:Bedingung, :Aktion) is det.
 forall(Bedingung, Aktion) :-
     \+ (Bedingung, \+ Aktion).
 
@@ -85,17 +95,22 @@ wandinschrift(archiv,   '4').
 
 %! aktenordner(?Nr) is nondet.
 %  Die vier Ordner im Regal, die gezogen werden muessen.
-aktenordner(7).
-aktenordner(11).
-aktenordner(13).
-aktenordner(17).
+aktenordner('7').
+aktenordner('11').
+aktenordner('13').
+aktenordner('17').
 
 %! regal_loesung(?Reihenfolge) is det.
 %  Korrekte Zugfolge fuer das Kombinationsraetsel am Regal.
 %  Codiert durch italienisches Kartenspiel Scopa:
 %    Keule(Bastoni)=17, Kelch(Coppe)=13, Muenze(Denari)=7, Schwert(Spade)=11
 %  Rangfolge: Bastoni > Coppe > Denari > Spade
-regal_loesung([17, 13, 7, 11]).
+regal_loesung(['17', '13', '7', '11']).
+
+%! schaltpult_loesung(?Loesung) is det.
+%  Korrekte Winkelkombination fuer das Steuerpult-Raetsel.
+%  Die acht Planeten-Schalter in Grad: Sonne in der Mitte, Planeten nach der Notiz.
+schaltpult_loesung('180 135 315 270 90 45 0 180').
 
 % =============================================================================
 %  DYNAMISCHER SPIELZUSTAND
@@ -103,10 +118,9 @@ regal_loesung([17, 13, 7, 11]).
 
 :- dynamic(position/2).     % position(Entitaet, Ort)
 :- dynamic(inventar/2).     % inventar(Spielfigur, Gegenstand)
-:- dynamic(zustand/2).      % zustand(Entitaet, Zustand)
+:- dynamic(zustand/2).      % zustand(Entitaet, Zustand)  -- incl. zustand(Obj, aktiv)
 :- dynamic(besucht/2).      % besucht(Spielfigur, Raumliste)
 :- dynamic(gelesen/2).      % gelesen(Spielfigur, Obj)
-:- dynamic(aktiviert/1).    % aktiviert(Obj)
 :- dynamic(gezogen/1).      % gezogen(Ordner-Nr) -- Regalraetsel
 :- dynamic(stop/0).
 
@@ -121,7 +135,6 @@ init :-
     retractall(zustand(_, _)),
     retractall(besucht(_, _)),
     retractall(gelesen(_, _)),
-    retractall(aktiviert(_)),
     retractall(gezogen(_)),
     retractall(stop),
     % Spielfigur
@@ -138,11 +151,12 @@ init :-
     assertz(position(geheimfach,   geheimraum)),
     % Fest installierte Objekte
     assertz(position(schaltpult,   labor)),
+    assertz(position(notiz,        schaltpult)),
     assertz(position(regal,        archiv)),
     % Tuer- und Verbindungszustaende
     assertz(zustand(labortuer,     verschlossen)),
     assertz(zustand(archivtuer,    verschlossen)),
-    assertz(zustand(geheimgang,    verborgen)),
+    assertz(zustand(geheimgang,    verschlossen)),
     assertz(zustand(geheimfach,    verborgen)),
     assertz(zustand(schaltpult,    gesperrt)),
     assertz(besucht(ich, [eingang])).
@@ -151,33 +165,55 @@ init :-
 %  DARSTELLUNG
 % =============================================================================
 
+%! trennlinie is det.
+%  Gibt eine visuelle Trennlinie aus.
+trennlinie :- format("------------------------------------------------------------~n", []).
+
+%! schreibe_text(+Text) is det.
+%  Gibt einen beschreibung-Text korrekt aus.
+%  In Scryer sind "-Strings Zeichenlisten; format("~s") gibt sie direkt aus.
+schreibe_text(Text) :-
+    format("~s", [Text]), nl.
+
 %! sichtbare_umgebung is det.
 sichtbare_umgebung :-
+    cls,
     position(ich, aussen), !,
     catch(lies_textdatei('end.txt'), _,
           format("Du bist aussen.~n", [])).
 sichtbare_umgebung :-
     position(ich, Raum),
     benoetigt_licht(Raum),
-    \+ aktiviert(taschenlampe), !,
-    format("~n=== ~w ===~n", [Raum]),
+    \+ zustand(taschenlampe, aktiv), !,
+    trennlinie,
+    format("  ~w~n", [Raum]),
+    trennlinie,
+    nl,
     zeige_geheimraum_text.
 sichtbare_umgebung :-
     position(ich, Raum),
-    format("~n=== ~w ===~n~n", [Raum]),
+    trennlinie,
+    format("  ~w~n", [Raum]),
+    trennlinie,
+    nl,
     (   beschreibung(Raum, Text)
-    ->  format("~w~n~n", [Text])
+    ->  schreibe_text(Text), nl
     ;   true
     ),
-    forall(
-        (position(Gegenstand, Raum), gegenstand(Gegenstand)),
-        format("  Du siehst: ~w~n", [Gegenstand])
+    findall(G, (position(G, Raum), gegenstand(G)), Gs),
+    (   Gs \= []
+    ->  format("Du siehst:~n", []),
+        forall(member(G, Gs), format("  ~w~n", [G])),
+        nl
+    ;   true
     ),
+    format("Ausgaenge:~n", []),
     forall(
         verbindet(Raum, Nachbar),
-        format("  Ausgang: ~w~n", [Nachbar])
+        format(" ~w~n", [Nachbar])
     ),
-    tuer_anzeigen(Raum).
+    tuer_anzeigen(Raum),
+    nl.
 
 %! zeige_geheimraum_text is det.
 %  Gibt den kontextabhaengigen Geheimraum-Text aus (drei Zustaende).
@@ -197,22 +233,27 @@ zeige_geheimraum_text :-
 tuer_anzeigen(Raum) :-
     forall(
         (   tuer(Raum, Nachbar, Tuer),
-            \+ zustand(Tuer, verborgen)
+            (   Tuer == geheimgang
+            ->  zustand(regal, verschoben)
+            ;   \+ zustand(Tuer, verborgen)
+            )
         ),
-        (   zustand(Tuer, verschlossen)
-        ->  format("  Tuer nach ~w: ~w (verschlossen)~n", [Nachbar, Tuer])
-        ;   format("  Tuer nach ~w: ~w (offen)~n",        [Nachbar, Tuer])
-        )
+        format(" ~w~n", [Nachbar])
     ).
 
 %! in_inventar is det.
 in_inventar :-
     findall(G, inventar(ich, G), Gs),
     sort(Gs, Sortiert),
-    findall(A, aktiviert(A), Aktiv),
-    format("Inventar: ~w~n", [Sortiert]),
+    findall(A, zustand(A, aktiv), Aktiv),
+    (   Sortiert \= []
+    ->  format("Du trägst beir dir:~n", []),
+        forall(member(G, Sortiert), format("  ~w~n", [G]))
+    ;   format("Dein Inventar ist leer.~n", [])
+    ),
     (   Aktiv \= []
-    ->  format("Aktiviert: ~w~n", [Aktiv])
+    ->  format("Aktiviert:~n", []),
+        forall(member(A, Aktiv), format("  ~w~n", [A]))
     ;   true
     ).
 
@@ -263,7 +304,17 @@ gehe_nach(NeuerRaum) :-
     tuer(AktuellerRaum, NeuerRaum, Tuer),
     zustand(Tuer, verschlossen),
     verwendbar_mit(Tuer, Werkzeug), !,
-    format("Die ~w ist verschlossen. Du brauchst: ~w.~n", [Tuer, Werkzeug]).
+    format("Die ~w ist verschlossen.~n", [Tuer]).
+gehe_nach(NeuerRaum) :-
+    position(ich, AktuellerRaum),
+    tuer(AktuellerRaum, NeuerRaum, geheimgang),
+    \+ zustand(regal, verschoben), !,
+    format("Das Regal versperrt den Weg. Es muss erst zur Seite geschoben werden.~n", []).
+gehe_nach(NeuerRaum) :-
+    position(ich, AktuellerRaum),
+    tuer(AktuellerRaum, NeuerRaum, Tuer),
+    zustand(Tuer, verschlossen), !,
+    format("Die ~w ist verschlossen. Du hast keine Moeglichkeit, sie zu oeffnen.~n", [Tuer]).
 gehe_nach(NeuerRaum) :-
     position(ich, AktuellerRaum),
     tuer(AktuellerRaum, NeuerRaum, Tuer),
@@ -312,7 +363,7 @@ oeffne(Tuer) :-
     format("Du oeffnest ~w.~n", [Tuer]).
 oeffne(Tuer) :-
     verwendbar_mit(Tuer, Werkzeug), !,
-    format("Du kannst ~w nicht oeffnen -- du brauchst: ~w.~n", [Tuer, Werkzeug]).
+    format("Du kannst ~w nicht oeffnen.~n", [Tuer]).
 oeffne(Tuer) :-
     format("Du kannst ~w nicht oeffnen.~n", [Tuer]).
 
@@ -330,35 +381,32 @@ verwende(_, Ziel) :-
     verwendbar_mit(Ziel, _),
     \+ zustand(Ziel, verschlossen), !,
     format("~w ist bereits offen.~n", [Ziel]).
-verwende(brecheisen, labortuer) :- !,
-    format("Die Labortuer ist zu stark fuer das Brecheisen.~n", []).
 verwende(Werkzeug, Ziel) :-
     format("~w laesst sich nicht mit ~w verwenden.~n", [Ziel, Werkzeug]).
 
 %! aktiviere(+Obj) is det.
 %  pre(a): inventar(ich, Obj), aktivierbar(Obj)
-%  add(a): aktiviert(Obj)
+%  add(a): zustand(Obj, aktiv)
 aktiviere(Obj) :-
     \+ inventar(ich, Obj), !,
     format("~w traegst du nicht.~n", [Obj]).
 aktiviere(Obj) :-
-    aktiviert(Obj), !,
+    zustand(Obj, aktiv), !,
     format("~w ist bereits aktiviert.~n", [Obj]).
+aktiviere(taschenlampe) :-
+    assertz(zustand(taschenlampe, aktiv)),
+    format("Du aktivierst taschenlampe.~n", []),
+    (   position(ich, geheimraum)
+    ->  format("Der Lichtkegel erleuchtet den Raum. Der Boden wird sichtbar.~n", []),
+        sichtbare_umgebung
+    ;   true
+    ).
 aktiviere(Obj) :-
     aktivierbar(Obj), !,
-    assertz(aktiviert(Obj)),
-    format("Du aktivierst ~w.~n", [Obj]),
-    aktiviere_effekt(Obj).
+    assertz(zustand(Obj, aktiv)),
+    format("Du aktivierst ~w.~n", [Obj]).
 aktiviere(Obj) :-
     format("~w laesst sich nicht aktivieren.~n", [Obj]).
-
-%! aktiviere_effekt(+Obj) is det.
-%  Seiteneffekte beim Aktivieren.
-aktiviere_effekt(taschenlampe) :-
-    position(ich, geheimraum), !,
-    format("Der Lichtkegel erleuchtet den Raum. Der Boden wird sichtbar.~n", []),
-    sichtbare_umgebung.
-aktiviere_effekt(_).
 
 %! kann_oeffnen(?Tuer) is semidet.
 kann_oeffnen(Tuer) :-
@@ -395,9 +443,6 @@ entferne_ordner(Nr) :-
 entferne_ordner(Nr) :-
     gezogen(Nr), !,
     format("Aktenordner ~w hast du bereits gezogen.~n", [Nr]).
-entferne_ordner(_) :-
-    zustand(geheimgang, verborgen), !,
-    format("Das Regal laesst sich nicht bewegen -- der Mechanismus ist nicht aktiviert.~n", []).
 entferne_ordner(Nr) :-
     assertz(gezogen(Nr)),
     findall(G, gezogen(G), Gezogen),
@@ -421,68 +466,38 @@ entferne_ordner(Nr) :-
 %  add(a): zustand(geheimgang, offen)
 regal_geloest :-
     format("~nEin schweres Knirschen. Das Regal gleitet langsam zur Seite.~n", []),
-    format("Dahinter: eine Tuer.", []),
-    retract(zustand(geheimgang, entsperrt)),
-    assertz(zustand(geheimgang, offen)).
+    format("Dahinter: eine schwere Tuer mit einem Kartenleser.~n", []),
+    assertz(zustand(regal, verschoben)).
 
 % =============================================================================
-%  SCHALTPULT-RAETSEL (DEDUKTIONSRAETSEL)
-%  Der Code ergibt sich aus den Wandinschriften aller vier Raeume: 3714.
-%  Nach Eingabe des Codes: Kanalplan sichtbar, Kanal B schaltet Geheimgang frei.
+%  SCHALTPULT-RAETSEL (WINKELPUZZLE)
+%  Acht kreisförmige Regler (Symbole: ☉ ☿ ♀ ♁ ♂ ♃ ♄ ♅ ♆) müssen in die
+%  richtigen Winkelpositionen gebracht werden. Der letzte Regler in der Mitte
+%  gibt die Konstellation frei.
+%  Der Spieler gibt alle acht Winkel als String ein:
+%    einstellen 180 135 315 270 90 45 0 180
 % =============================================================================
 
-%! schalte(+Kanal) is det.
-schalte(_) :-
+%! winkel_eingabe(+Angles) is det.
+winkel_eingabe(_) :-
     \+ position(ich, labor), !,
     format("Hier gibt es kein Schaltpult.~n", []).
-schalte(_) :-
-    zustand(schaltpult, gesperrt), !,
-    format("Das Schaltpult ist gesperrt. Zuerst den Code eingeben.~n", []).
-schalte(b) :-
-    zustand(geheimgang, verborgen), !,
-    retract(zustand(geheimgang, verborgen)),
-    assertz(zustand(geheimgang, entsperrt)),
-    format("~nKanal B: ARCHIV-BYPASS -- Schalter auf OFFEN.~n", []),
-    format("Ein entferntes Summen. Irgendwo hat sich etwas entsperrt.~n", []).
-schalte(b) :-
-    format("Kanal B ist bereits aktiviert.~n", []).
-schalte(Kanal) :-
-    member(Kanal, [a, c, d]), !,
-    format("Kanal ~w umgestellt. Keine sichtbare Reaktion.~n", [Kanal]).
-schalte(Kanal) :-
-    format("Kanal ~w existiert nicht. Verfuegbar: a, b, c, d.~n", [Kanal]).
-
-%! tippe(+Code) is det.
-%  Gibt den vierstelligen Code am Schaltpult ein.
-%  Der Code ergibt sich aus den wandinschrift-Zahlen aller 4 Raeume
-%  in Deklarationsreihenfolge: 3714.
-tippe(_) :-
-    \+ position(ich, labor), !,
-    format("Hier gibt es kein Schaltpult.~n", []).
-tippe(_) :-
-    \+ zustand(schaltpult, gesperrt), !,
-    format("Das Schaltpult ist bereits entsperrt.~n", []).
-tippe(Code) :-
-    besucht(ich, Besucht),
-    findall(Z, (wandinschrift(R, Z), member(R, Besucht)), Zahlen),
-    length(Zahlen, 4), !,
-    atome_konkatenieren(Zahlen, RichtigerCode),
-    (   Code == RichtigerCode
-    ->  retract(zustand(schaltpult, gesperrt)),
-        assertz(zustand(schaltpult, offen)),
-        format("~nKlick. Das Schaltpult springt auf.~n", []),
-        format("Ein Kanalplan: A=Eingang, B=Archiv-Bypass, C=Labor, D=47.~n", []),
-        format("Ein verwittertes Notizbuch: 'VK-47 -- alle Daten sichern.'~n~n", [])
-    ;   format("Falscher Code. Das Feld blinkt rot.~n", [])
+winkel_eingabe(Angles) :-
+    schaltpult_loesung(Loesung),
+    (   Angles == Loesung
+    ->  (   \+ zustand(regal, verschoben)
+        ->  format("Ein entfernter Mechanismus ist zu hoeren.~n", []),
+            format("Ein positives Signal ertoent aus dem Steuerpult.~n", []),
+            format("Doch das Ziel wird noch durch das Regal versperrt.~n", [])
+        ;   zustand(geheimgang, verschlossen)
+        ->  format("Ein entfernter Mechanismus ist zu hoeren.~n", []),
+            format("Ein positives Signal ertoent aus dem Steuerpult.~n", []),
+            retract(zustand(geheimgang, verschlossen)),
+            assertz(zustand(geheimgang, offen))
+        ;   format("Die Tuer ist bereits offen.~n", [])
+        )
+    ;   format("Ein Fehlerton ertoent aus dem Steuerpult.~n", [])
     ).
-tippe(_) :-
-    format("Dir fehlen noch Wandzahlen. Erkunde alle Raeume.~n", []).
-
-%! atome_konkatenieren(+Liste, -Atom) is det.
-atome_konkatenieren([], '').
-atome_konkatenieren([H|T], Ergebnis) :-
-    atome_konkatenieren(T, Rest),
-    atom_concat(H, Rest, Ergebnis).
 
 % =============================================================================
 %  SPIELZIEL UND METARAETSEL
@@ -500,61 +515,53 @@ geheimgang_verschliessen :-
     ;   true
     ).
 
-%! ziel_erreicht is semidet.
-%  Feuert wenn Akte im Inventar UND gelesen.
-ziel_erreicht :-
-    inventar(ich, akte),
-    akte_gelesen,
-    \+ stop.
-
-%! entkommen is det.
-%  Das Metaraetsel: Die Spielfigur retraktiert seine eigene Position
-%  und assertiert einen neuen Ort ausserhalb der Wissensbasis.
-%  Vorbedingungen: Akte gelesen, im Geheimraum, alle Raeume besucht.
-entkommen :-
+%! entkommen(+Metacode) is det.
+%  Das Metaraetsel: Der vom Spieler eingegebene Prolog-Code wird tatsaechlich
+%  per call/1 ausgefuehrt -- die Spielwelt wird durch Metapraedikate umprogrammiert.
+%
+%  HINWEIS (Code-Injektion): Hier wird Nutzereingabe bewusst als ausfuehrbarer
+%  Prolog-Code behandelt. Das ist der Lehr-Gag: der Spieler schreibt Prolog,
+%  das das laufende Programm veraendert. In produktiven Systemen niemals
+%  Nutzereingaben direkt per call/1 ausfuehren.
+entkommen(_) :-
     \+ akte_gelesen, !,
-    format("Du weisst noch nicht genug. Lies die Akte.~n", []).
-entkommen :-
+    format("Ich hab nicht genug wissen. Ich muss die Akte lesen.~n", []).
+entkommen(_) :-
     \+ position(ich, geheimraum), !,
-    format("Das funktioniert hier nicht. Du spuerst es -- der Ort stimmt nicht.~n", []).
-entkommen :-
-    % STRIPS:
-    % pre:  akte gelesen, position(ich, geheimraum), alle Raeume besucht
-    % del:  position(ich, geheimraum)
-    % add:  position(ich, aussen)
-    format("~n", []),
-    format("Du retraktierst dich selbst.~n", []),
-    format("  retract(position(ich, geheimraum)).~n", []),
-    format("~n", []),
+    format("Das funktioniert hier nicht. Du spürst, dass du am falschen Ort bist.~n", []).
+entkommen(Metacode) :-
+    % STRIPS (durch den vom Spieler eingegebenen Code):
+    % pre:  akte gelesen, position(ich, geheimraum)
+    % del/add: via call(Term)
+    atom_chars(Metacode, Cs),
+    append(Cs, ['.'], CsDot),
+    read_term_from_chars(CsDot, Term, []),
+    format("~nDu sprichst die Worte. Der Raum verformt sich.~n~n", []),
+    format("  ~w~n~n", [Metacode]),
     sleep(2),
-    format("Du assertierst einen neuen Ort.~n", []),
-    format("  assertz(position(ich, aussen)).~n", []),
-    format("~n", []),
-    sleep(2),
-    format("Du bist nicht mehr hier.~n", []),
-    format("Du bist nicht mehr nirgendwo.~n", []),
-    format("Du bist ausserhalb.~n", []),
-    sleep(3),
-    retract(position(ich, geheimraum)),
-    assertz(position(ich, aussen)),
+    call(Term),    % <-- Metapraedikat: Spieler-Code wird tatsaechlich ausgefuehrt
     assertz(stop),
     zeige_ende,
-    zeige_credits.
+    neustarten_menue.
 
-%! parole_korrekt(+Parole) is semidet.
-%  Die erwartete Parole des Metaraetsels (ohne Abschlusszeichen).
-parole_korrekt('retract(position(ich, _)), assert(position(ich, aussen))').
+%! Metacode_korrekt(+Metacode) is semidet.
+%  Der erwartete Metacode des Metaraetsels (ohne Abschlusszeichen).
+metacode_korrekt('retract(position(ich,_)),assertz(position(ich,aussen))').
 
-%! sage_parole(+ParoleRoh) is det.
-%  Prueft die eingegebene Parole und fuehrt entkommen aus wenn korrekt.
-sage_parole(ParoleRoh) :-
-    atom_chars(ParoleRoh, Cs),
+%! sage_metatext(+MetacodeRoh) is det.
+%  Prueft den eingegebenen Metacode gegen metacode_korrekt/1 und
+%  fuehrt ihn bei Uebereinstimmung tatsaechlich per call/1 aus.
+sage_metatext(MetacodeRoh) :-
+    atom_chars(MetacodeRoh, Cs),
     entferne_abschluss(Cs, Bs),
-    atom_chars(Parole, Bs),
-    parole_korrekt(Parole), !,
-    entkommen.
-sage_parole(_) :-
-    format("Diese Parole oeffnet keinen Weg.~n", []).
+    atom_chars(Metacode, Bs),
+    atom_chars(Metacode, CodeChars),
+    exkludiere_leerzeichen(CodeChars, Normalisiert),
+    atom_chars(NormCode, Normalisiert),
+    metacode_korrekt(NormCode), !,
+    entkommen(Metacode).
+sage_metatext(_) :-
+    format("Deine Worte verhallen in den Gängen der Einrichtung.~n", []).
 
 % =============================================================================
 %  BETRACHTEN
@@ -572,8 +579,13 @@ betrachte(akte) :-
     lies_textdatei('akte.txt').
 betrachte(akte) :-
     beschreibung(akte, Text),
-    format("~w~n", [Text]),
+    schreibe_text(Text),
     format("Du musst sie erst nehmen.~n", []).
+betrachte(regal) :-
+    position(ich, archiv),
+    gelesen(ich, buch),
+    zustand(regal, verschoben), !,
+    format("Das Regal: eine schwere Tuer ist dahinter sichtbar.~n", []).
 betrachte(regal) :-
     position(ich, archiv),
     gelesen(ich, buch), !,
@@ -581,10 +593,10 @@ betrachte(regal) :-
 betrachte(regal) :-
     position(ich, archiv), !,
     beschreibung(regal, Text),
-    format("~w~n", [Text]).
+    schreibe_text(Text).
 betrachte(boden) :-
     position(ich, geheimraum),
-    aktiviert(taschenlampe), !,
+    zustand(taschenlampe, aktiv), !,
     format("Der Boden knarrt ungleichmaessig. Eine Diele sitzt erkennbar locker.~n", []).
 betrachte(boden) :-
     position(ich, geheimraum), !,
@@ -594,13 +606,15 @@ betrachte(wand) :-
     wandinschrift(Raum, Zahl), !,
     format("An der Wand: ~w~n", [Zahl]).
 betrachte(wand) :-
-    format("Eine ganz normale Wand. Nichts Besonderes.~n", []).
+    beschreibung(wand, Text),
+    schreibe_text(Text).
 betrachte(boden) :-
-    format("Am Boden ist nichts Besonderes.~n", []).
+    beschreibung(boden, Text),
+    schreibe_text(Text).
 betrachte(Obj) :-
     (inventar(ich, Obj) ; position(ich, Raum), erreichbar(Obj, Raum)),
     beschreibung(Obj, Text), !,
-    format("~w~n", [Text]).
+    schreibe_text(Text).
 betrachte(Obj) :-
     format("Du siehst hier kein ~w.~n", [Obj]).
 
@@ -614,55 +628,54 @@ untersuche(wand) :-
     wandinschrift(Raum, Zahl), !,
     format("An der Wand: ~w~n", [Zahl]).
 untersuche(wand) :-
-    format("Keine besonderen Zeichen an der Wand.~n", []).
+    beschreibung(wand, Text),
+    schreibe_text(Text).
 untersuche(regal) :-
     position(ich, archiv),
     gelesen(ich, buch),
-    zustand(geheimgang, entsperrt), !,
+    zustand(regal, verschoben), !,
     lies_textdatei('regal.txt'),
-    format("~nZiehe die Ordner in der richtigen Reihenfolge mit: entferne <nr>~n", []).
+    (   zustand(geheimgang, verschlossen)
+    ->  format("~nDie Tuer ist noch verschlossen. Das Schaltpult im Labor koennte helfen.~n", [])
+    ;   true
+    ).
 untersuche(regal) :-
     position(ich, archiv),
     gelesen(ich, buch),
-    zustand(geheimgang, verborgen), !,
-    format("Das Regal steht einen Fingerbreit von der Wand ab. Auf dem Boden: keine Staubspur.~n", []),
-    format("Aber irgendetwas blockiert den Mechanismus noch.~n", []).
-untersuche(regal) :-
-    position(ich, archiv),
-    gelesen(ich, buch), !,
-    format("Das Regal. Die Ordner haben Zahlen auf dem Ruecken. Vielleicht gibt die Reihenfolge den Ausschlag.~n", []).
+    \+ zustand(regal, verschoben), !,
+    format("Das Regal. Die Ordner haben Zahlen auf dem Ruecken.~n", []),
+    format("Ziehe die Ordner in der richtigen Reihenfolge mit: entferne <nr>~n", []).
 untersuche(regal) :-
     position(ich, archiv), !,
     beschreibung(regal, Text),
-    format("~w~n", [Text]),
+    schreibe_text(Text),
     format("Vielleicht sagt dir das Buch mehr darueber.~n", []).
 untersuche(boden) :-
     position(ich, geheimraum),
-    \+ aktiviert(taschenlampe), !,
+    \+ zustand(taschenlampe, aktiv), !,
     format("Es ist zu dunkel, um den Boden zu erkennen. Licht wuerde helfen.~n", []).
 untersuche(boden) :-
     position(ich, geheimraum),
     zustand(geheimfach, verborgen), !,
-    format("Eine lose Diele. Darunter -- ein Hohlraum. Ein Geheimfach!~n", []),
+    format("Eine lose Diele. Darunter: ein Hohlraum. Ein Geheimfach!~n", []),
     retract(zustand(geheimfach, verborgen)),
     assertz(zustand(geheimfach, entdeckt)).
 untersuche(boden) :-
     position(ich, geheimraum), !,
     format("Die lose Diele. Das Geheimfach liegt offen.~n", []).
 untersuche(boden) :-
-    format("Am Boden ist nichts Besonderes.~n", []).
-untersuche(schaltpult) :-
-    position(ich, labor),
-    zustand(schaltpult, offen), !,
-    format("Das Schaltpult. Kanalplan: A=Eingang, B=Archiv-Bypass, C=Labor, D=47.~n", []),
-    format("Schalte einen Kanal: schalte <a/b/c/d>~n", []).
+    beschreibung(boden, Text),
+    schreibe_text(Text).
 untersuche(schaltpult) :-
     position(ich, labor), !,
-    beschreibung(schaltpult, Text),
-    format("~w~n", [Text]),
-    format("Tippe den Code: tippe <code>~n", []).
+    lies_textdatei('steuerpult.txt').
 untersuche(schaltpult) :-
     format("Hier gibt es kein Schaltpult.~n", []).
+untersuche(notiz) :-
+    position(ich, labor), !,
+    lies_textdatei('notiz.txt').
+untersuche(notiz) :-
+    format("Hier gibt es keine Notiz.~n", []).
 untersuche(buch) :-
     (inventar(ich, buch) ; position(ich, Raum), erreichbar(buch, Raum)), !,
     (   \+ gelesen(ich, buch)
@@ -697,54 +710,56 @@ zeige_inhalt(Behaelter) :-
 % =============================================================================
 
 %! lese(+Obj) is det.
+lese(akte) :-
+    (inventar(ich, akte) ; position(ich, Raum), erreichbar(akte, Raum)), !,
+    (   \+ akte_gelesen
+    ->  assertz(gelesen(ich, akte)),
+        geheimgang_verschliessen,
+        format("~n[Die Tueren fallen ins Schloss.]~n~n", [])
+    ;   true
+    ),
+    lies_textdatei('akte.txt').
 lese(Obj) :-
     (inventar(ich, Obj) ; position(ich, Raum), erreichbar(Obj, Raum)), !,
     (   \+ gelesen(ich, Obj)
     ->  assertz(gelesen(ich, Obj))
     ;   true
     ),
-    lese_effekt(Obj),
     atom_concat(Obj, '.txt', Datei),
     catch(lies_textdatei(Datei), _,
           (   beschreibung(Obj, Text)
-          ->  format("~w~n", [Text])
+          ->  schreibe_text(Text)
           ;   format("Hier gibt es nichts zu lesen.~n", [])
           )).
 lese(Obj) :-
     format("~w liegt nicht in deiner Reichweite.~n", [Obj]).
 
-%! lese_effekt(+Obj) is det.
-%  Seiteneffekte beim Lesen bestimmter Objekte.
-lese_effekt(akte) :-
-    inventar(ich, akte),
-    \+ akte_gelesen, !,
-    geheimgang_verschliessen,
-    format("~n[Die Tueren fallen ins Schloss.]~n~n", []).
-lese_effekt(_).
-
 % =============================================================================
-%  LOOKUP-TABELLEN
+%  BESCHREIBUNGEN
 % =============================================================================
 
 %! beschreibung(+Obj, -Text) is semidet.
 beschreibung(akte,         "Akte VK-47. Versiegelt. Ein Roter Stempel: STRENG GEHEIM.").
 beschreibung(archiv,       "Wandhohe Regale, dicht bestueckt mit nummerierten Aktenordnern. Staub liegt auf allem.").
-beschreibung(archivtuer,   "Eine alte Holztuer, sie hängt leicht schief in den Angeln.").
+beschreibung(archivtuer,   "Eine alte Schiebetür aus massivem Holz, sie hängt leicht schief in den Angeln und lässt sich kaum bewegen.").
 beschreibung(brecheisen,   "Ein schweres Brecheisen. Nuetzlich gegen schwache Schloesser. Oder Holztüren.").
 beschreibung(buch,         "Ein zerlesenes Buch MAZE, voller handschriftlicher Anmerkungen.").
-beschreibung(eingang,      "Die Eingangshalle. Marmorboden, zersplittert. Ein umgestuerzter Baum versperrt den Ausgang.").
+beschreibung(eingang,      "Die Eingangshalle. Der Ort scheint fluchtartig verlassen wirden zu sein.  Ein umgestuerzter Baum versperrt den Ausgang.").
 beschreibung(geheimfach,   "Ein Hohlraum unter einer losen Diele.").
-beschreibung(geheimgang,   "Eine schwere Tuer hinter dem Regal. Kein Griff -- ein Kartenleser.").
-beschreibung(geheimraum,   "Ein enger, staubiger Raum. Hier war sehr lange niemand.").
+beschreibung(geheimgang,   "Eine schwere Tuer hinter dem Regal. Kein Schloss, kein Öffnungsmechanismus. Wird sie von woanders geöffnet?").
+beschreibung(geheimraum,   "Ein enger, staubiger Raum. Hier war schon lange niemand mehr. Oder doch?").
 beschreibung(id_karte,     "Eine laminierte ID-Karte. Das Foto ist unkenntlich gemacht worden.").
-beschreibung(korridor,     "Ein langer Korridor. Die Deckenlampe flackert. Irgendwo tropft Wasser.").
+beschreibung(korridor,     "Ein langer Korridor. Die Deckenlampe flackert. Strom scheint es noch zu geben. Irgendwo tropft Wasser.").
 beschreibung(labor,        "Ein verlassenes Labor. Mobililar wie aus den 1960ern. Equipment wie aus der Zukunft.").
-beschreibung(labortuer,    "Eine Stahltuer mit Kartenleser. Nur die ID-Karte passt.").
+beschreibung(labortuer,    "Eine Stahltuer mit Kartenleser. ").
 beschreibung(regal,        "Ein deckenhohes Regal. Ordnerrucken mit Zahlen und kleinen Symbolen.").
-beschreibung(schaltpult,   "Ein altes Schaltpult. Ein Feld mit Schaltern sticht hervor. Sie scheinen erst kürzlich benutzt worden zu sein").
+beschreibung(schaltpult,   "Ein altes Schaltpult mit unbekannten Symbolen. Ein Schalterfeld mit Abdrücken im Staub sticht hervor. Es scheinen erst kürzlich benutzt worden zu sein").
+beschreibung(notiz,        "Ein Klemmbrett mit einer Notiz. Sie enthält rätselhafte Hinweise zu Winkeln.").
 beschreibung(schreibtisch, "Ein kastiger Laborschreibtisch. Er hat eine Schublade.").
 beschreibung(schublade,    "Eine halb geöffnete Schublade. Darin liegt ein Buch.").
 beschreibung(taschenlampe, "Eine robuste Taschenlampe, die Batterien scheinen noch ok zu sein.").
+beschreibung(boden,        "Am Boden ist nichts Besonderes.").
+beschreibung(wand,         "Eine ganz normale Wand. Nichts Besonderes.").
 
 % =============================================================================
 %  SPIELSTAND-PERSISTENZ (write_term/read_term)
@@ -759,9 +774,8 @@ speichere_spielstand(Datei) :-
     findall(zustand(E,Z),   zustand(E,Z),    Zst),
     findall(besucht(S,L),   besucht(S,L),    Bes),
     findall(gelesen(S,O),   gelesen(S,O),    Gel),
-    findall(aktiviert(A),   aktiviert(A),    Akt),
     findall(gezogen(N),     gezogen(N),      Gez),
-    Zustand = spielstand(Pos,Inv,Zst,Bes,Gel,Akt,Gez),
+    Zustand = spielstand(Pos,Inv,Zst,Bes,Gel,Gez),
     open(Datei, write, Stream),
     write_term(Stream, Zustand, [quoted(true)]),
     write(Stream, '.'),
@@ -773,21 +787,19 @@ speichere_spielstand(Datei) :-
 lade_spielstand(Datei) :-
     catch(
         (   open(Datei, read, Stream),
-            read_term(Stream, spielstand(Pos,Inv,Zst,Bes,Gel,Akt,Gez), []),
+            read_term(Stream, spielstand(Pos,Inv,Zst,Bes,Gel,Gez), []),
             close(Stream),
             retractall(position(_,_)),
             retractall(inventar(_,_)),
             retractall(zustand(_,_)),
             retractall(besucht(_,_)),
             retractall(gelesen(_,_)),
-            retractall(aktiviert(_)),
             retractall(gezogen(_)),
             maplist(assertz, Pos),
             maplist(assertz, Inv),
             maplist(assertz, Zst),
             maplist(assertz, Bes),
             maplist(assertz, Gel),
-            maplist(assertz, Akt),
             maplist(assertz, Gez),
             format("Spielstand geladen aus ~w.~n", [Datei]),
             sichtbare_umgebung
@@ -807,7 +819,7 @@ cls :- format("\x1b\[H\x1b\[2J", []).
 zeige_titelseite :-
     cls,
     catch(lies_textdatei('title.txt'), _, true),
-    sleep(10).
+    sleep(5).
 
 zeige_intro :-
     cls,
@@ -827,6 +839,24 @@ zeige_credits :-
     format("~n[Drücke Enter zum Beenden...]~n", []),
     get_line_to_chars(user_input, _, []).
 
+%! neustarten_menue is det.
+%  Wird nach erfolgreichem Spielende angezeigt.
+neustarten_menue :-
+    cls,
+    format("Spiel neu starten?~n~n", []),
+    format("  1. Neues Spiel~n", []),
+    format("  2. Beenden~n~n", []),
+    format("> ", []),
+    get_line_to_chars(user_input, Zeichen, []),
+    zeile_zu_woertern(Zeichen, Woerter),
+    (   Woerter = ['1'|_]
+    ->  play
+    ;   Woerter = ['2'|_]
+    ->  zeige_credits
+    ;   format("Bitte 1 oder 2 eingeben.~n", []),
+        neustarten_menue
+    ).
+
 %! lies_textdatei(+Dateiname) is det.
 lies_textdatei(Dateiname) :-
     open(Dateiname, read, Stream),
@@ -838,8 +868,7 @@ lies_zeilen(Stream) :-
     (   at_end_of_stream(Stream)
     ->  true
     ;   get_line_to_chars(Stream, Zeichen, []),
-        atom_chars(Zeile, Zeichen),
-        format("~w~n", [Zeile]),
+        format("~s", [Zeichen]),
         lies_zeilen(Stream)
     ).
 
@@ -880,6 +909,13 @@ ist_leerzeichen('\t').
 ist_leerzeichen('\n').
 ist_leerzeichen('\r').
 
+exkludiere_leerzeichen([], []).
+exkludiere_leerzeichen([C|Cs], Out) :-
+    ist_leerzeichen(C), !,
+    exkludiere_leerzeichen(Cs, Out).
+exkludiere_leerzeichen([C|Cs], [C|Out]) :-
+    exkludiere_leerzeichen(Cs, Out).
+
 leerzeichen_ueberspringen([Z|R], E) :- ist_leerzeichen(Z), !, leerzeichen_ueberspringen(R, E).
 leerzeichen_ueberspringen(R, R).
 
@@ -911,8 +947,7 @@ befehl(verwende(O, Z))      --> [benutze,  O, mit, Z].
 befehl(verwende(O, Z))      --> [benutze,  O, an,  Z].
 befehl(aktiviere(O))        --> [aktiviere, O].
 befehl(entferne(Nr))        --> [entferne, Nr].
-befehl(schalte(K))          --> [schalte, K].
-befehl(tippe(C))            --> [tippe, C].
+befehl(einstellen_ohne_argument) --> [einstellen].
 befehl(umsehen)             --> [umsehen].
 befehl(umsehen)             --> [umschauen].
 befehl(umsehen)             --> [schau].
@@ -943,13 +978,15 @@ lies_befehl(Befehl) :-
     ;   at_end_of_stream(user_input), Zeichen == []
     ->  Befehl = ende
     ;   atom_chars(Zeile, Zeichen),
-        (   atom_concat('sage ', Parole, Zeile)
-        ->  Befehl = sage(Parole)
+        (   atom_concat('einstellen ', WinkelString, Zeile)
+        ->  Befehl = winkel_eingabe(WinkelString)
+        ;   atom_concat('sage ', Metacode, Zeile)
+        ->  Befehl = sage(Metacode)
         ;   zeile_zu_woertern(Zeichen, Woerter),
             maplist(normalisiere_token, Woerter, Norm),
             (   parse_befehl(Norm, Befehl)
             ->  true
-            ;   format("Nicht verstanden. Tippe hilfe fuer Befehle.~n", []),
+            ;   format("Das habe ich nicht verstanden. Tippe hilfe fuer Befehle.~n", []),
                 Befehl = unbekannt
             )
         )
@@ -958,6 +995,9 @@ lies_befehl(Befehl) :-
 % =============================================================================
 %  DISPATCH
 % =============================================================================
+% Aus Gründen der Einfachheit sind I/O (format) und Logik hier nicht 100% 
+% getrennt. In groesseren Projekten ist es besser, dass die  Aktionen
+% Ergebnisterme zurueck geben und der Dispatcher sie ausgibt.
 
 %! dispatch(+Befehl) is det.
 dispatch(betrachte(O))      :- betrachte(O).
@@ -969,10 +1009,11 @@ dispatch(lege_ab(O))        :- lege_ab(O).
 dispatch(oeffne(T))         :- oeffne(T).
 dispatch(verwende(O, Z))    :- verwende(O, Z).
 dispatch(aktiviere(O))      :- aktiviere(O).
-dispatch(entferne(Nr))      :- entferne_ordner(Nr).
-dispatch(schalte(K))        :- schalte(K).
-dispatch(tippe(C))          :- tippe(C).
-dispatch(sage(P))           :- sage_parole(P).
+dispatch(entferne(Nr))              :- entferne_ordner(Nr).
+dispatch(einstellen_ohne_argument)  :-
+    format("Gib die Winkel an: einstellen <winkel1 winkel2 ...>~n", []).
+dispatch(winkel_eingabe(S))         :- winkel_eingabe(S).
+dispatch(sage(P))           :- sage_metatext(P).
 dispatch(umsehen)           :- sichtbare_umgebung.
 dispatch(inventar)          :- in_inventar.
 dispatch(hilfe)             :- hilfe_text.
@@ -987,7 +1028,6 @@ dispatch(unbekannt).
 
 %! play is det.
 play :-
-    cls,
     init,
     zeige_titelseite,
     zeige_intro,
@@ -1000,13 +1040,6 @@ loop_rekursiv :-
     (   stop
     ->  true
     ;   lies_befehl(Befehl),
-        cls,
         dispatch(Befehl),
-        (   ziel_erreicht
-        ->  assertz(stop),
-            zeige_ende,
-            zeige_credits
-        ;   true
-        ),
         loop_rekursiv
     ).
