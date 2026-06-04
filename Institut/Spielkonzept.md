@@ -56,6 +56,8 @@ Steuerpult          Labor                           Schalter                    
 Taschenlampe        Labor (auf dem Steuerpult)      Schlüssel                   Sichtbarkeitsrätsel Geheimfach
 
 
+## Aufgaben, Hindernisse und Rätsel
+
 - Labor Rätsel
     ID Karte muss im Inventar sein
     Verwende ID Karte mit Labortür
