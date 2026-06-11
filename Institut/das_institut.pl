@@ -303,7 +303,7 @@ gehe_nach(NeuerRaum) :-
     position(ich, AktuellerRaum),
     tuer(AktuellerRaum, NeuerRaum, Tuer),
     zustand(Tuer, verschlossen),
-    verwendbar_mit(Tuer, Werkzeug), !,
+    verwendbar_mit(Tuer, _Werkzeug), !,
     format("Die ~w ist verschlossen.~n", [Tuer]).
 gehe_nach(NeuerRaum) :-
     position(ich, AktuellerRaum),
@@ -362,7 +362,7 @@ oeffne(Tuer) :-
     assertz(zustand(Tuer, offen)),
     format("Du oeffnest ~w.~n", [Tuer]).
 oeffne(Tuer) :-
-    verwendbar_mit(Tuer, Werkzeug), !,
+    verwendbar_mit(Tuer, _Werkzeug), !,
     format("Du kannst ~w nicht oeffnen.~n", [Tuer]).
 oeffne(Tuer) :-
     format("Du kannst ~w nicht oeffnen.~n", [Tuer]).
