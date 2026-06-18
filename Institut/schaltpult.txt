@@ -1,0 +1,20 @@
+============================================================
+Schaltpult
+============================================================
+
+Ein altes, rostiges, abgenutztes  Schaltpult aus Metall. 
+Es besteht aus achtkonzentrischen kreisförmigen Führungen 
+und Reglern, die sich durch die Führungen schieben lassen. 
+Sie klemmen, aber mit etwas Kraft lassesn sie sich bewegen. 
+Ganz Außen befindetr sich noch ein Ring. Dieser ist nur 
+eingraviert und scheint eine Art Skala darzustellen. Oben 
+ist eine 0 eingraviert. Die Führungen sind schwerfällig und  
+die Regler rasten bei jeder fünften Markierung ein. 
+
+Jeder Regler zeigt ein Symbol:
+
+                      1 2 3 4 5 6 7 8   
+Schalter: ☉   Regler: ☿ ♀ ♁ ♂ ♃ ♄ ♅ ♆ 
+
+Wofür die wohl gut sind?
+An der Seite hängt eine Notiz auf einem Klemmbrett.
